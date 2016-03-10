@@ -149,7 +149,7 @@ func (p *iniParser) readKey() error {
 	key := string(keyBytes)
 
 	for _, r := range key {
-		if r != '-' && r != '_' && !unicode.IsSymbol(r) && !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.IsMark(r) {
+		if r != '-' && r != '_' && r != '.' && !unicode.IsSymbol(r) && !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.IsMark(r) {
 			return fmt.Errorf("Keys may only contain letters, numbers, marks, symbols, hyphens, and underscores; %q is not a valid character.", r)
 		}
 	}
