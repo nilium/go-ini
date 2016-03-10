@@ -1,9 +1,12 @@
 package ini
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestReadINIEmpty(t *testing.T) {
-	testReadINIMatching(t, "\n\t\n;empty\n\t\n\t", map[string]string{})
+	testReadINIMatching(t, "\n\t\n;empty\n\t\n\t", map[string][]string{})
 }
 
 func TestReadINISectionSpaces(t *testing.T) {
@@ -13,7 +16,7 @@ func TestReadINISectionSpaces(t *testing.T) {
 	testReadINIError(t, "\n[\nnewline\nsection]\nk = v\n")
 
 	// Good
-	expected := map[string]string{`section ok.k`: `v`}
+	expected := map[string][]string{`section.ok.k`: []string{`v`}}
 	testReadINIMatching(t, `
 		[section ok]
 		k = v
@@ -21,17 +24,30 @@ func TestReadINISectionSpaces(t *testing.T) {
 		expected)
 }
 
+func TestReadQuotedMulti(t *testing.T) {
+	src := `
+	[foo "http://git.spiff.io"]
+		insteadOf = left
+		insteadOf = right
+	`
+	expected := map[string][]string{
+		`foo.http://git.spiff.io.insteadOf`: []string{"left", "right"},
+	}
+
+	testReadINIMatching(t, src, expected)
+}
+
 func TestReadINISectionValueComment(t *testing.T) {
 	testReadINIMatching(t,
 		` key = ; `,
-		map[string]string{
-			`key`: ``,
+		map[string][]string{
+			`key`: []string{``},
 		},
 	)
 }
 
 func TestReadINIValueNewline(t *testing.T) {
-	expected := map[string]string{`key`: ``}
+	expected := map[string][]string{`key`: []string{``}}
 	testReadINIMatching(t, " key = \n ", expected)
 	testReadINIMatching(t, " key =\n ", expected)
 	testReadINIMatching(t, " key=\n ", expected)
@@ -43,7 +59,7 @@ func TestReadINIValueNewline(t *testing.T) {
 }
 
 func TestReadINIValueSimple(t *testing.T) {
-	expected := map[string]string{`key`: `value`}
+	expected := map[string][]string{`key`: []string{`value`}}
 	// In the interest of being possibly unusually thorough.
 	testReadINIMatching(t, " key = value ", expected)
 	testReadINIMatching(t, " key=value ", expected)
@@ -57,8 +73,8 @@ func TestReadINIValueSimple(t *testing.T) {
 }
 
 func TestReadINIFlagSimple(t *testing.T) {
-	expected := map[string]string{
-		`key`: True,
+	expected := map[string][]string{
+		`key`: []string{True},
 	}
 
 	testReadINIMatching(t, "key", expected)
@@ -80,8 +96,8 @@ func TestReadINIFlagSimple(t *testing.T) {
 }
 
 func TestReadINIUnicode(t *testing.T) {
-	expected := map[string]string{
-		"-_kŭjəl_-": "käkə-pō",
+	expected := map[string][]string{
+		"-_kŭjəl_-": []string{"käkə-pō"},
 	}
 	testReadINIMatching(t, "-_kŭjəl_- = käkə-pō", expected)
 	testReadINIMatching(t, "-_kŭjəl_-=käkə-pō", expected)
@@ -97,10 +113,10 @@ func TestReadINIUnicode(t *testing.T) {
 }
 
 func TestReadMultiline(t *testing.T) {
-	expected := map[string]string{
-		`foo`: True,
-		`bar`: ``,
-		`baz`: `value`,
+	expected := map[string][]string{
+		`foo`: []string{True},
+		`bar`: []string{``},
+		`baz`: []string{`value`},
 	}
 	testReadINIMatching(t, "foo\nbar=;\nbaz=value", expected)
 	testReadINIMatching(t, "foo;\nbar=\nbaz=value", expected)
@@ -110,9 +126,9 @@ func TestReadMultiline(t *testing.T) {
 }
 
 func TestReadQuoted(t *testing.T) {
-	expected := map[string]string{
-		`normal`:  `  a thing  `,
-		`escaped`: string([]byte{0}) + "\a\b\f\n\r\t\v\\\"jkl;",
+	expected := map[string][]string{
+		`normal`:  []string{`  a thing  `},
+		`escaped`: []string{string([]byte{0}) + "\a\b\f\n\r\t\v\\\"jkl;"},
 	}
 
 	// In the interest of being possibly unusually thorough.
@@ -158,23 +174,23 @@ lmn
 no_prefix = this has no prefix
 `
 
-	keys := map[string]string{
-		`a`:              "5\n\n",
-		`prefix.foo.a`:   `value of "a"`,
-		`prefix.foo.b`:   `unhandled`,
-		`prefix.foo.c`:   `1`,
-		`prefix.bar.d`:   ``,
-		`prefix.bar.efg`: ``,
-		`prefix.bar.hij`: `1`,
-		`prefix.bar.k`:   `1`,
-		`prefix.bar.lmn`: `1`,
-		`no_prefix`:      `this has no prefix`,
+	keys := map[string][]string{
+		`a`:              []string{"5\n\n"},
+		`prefix.foo.a`:   []string{`value of "a"`},
+		`prefix.foo.b`:   []string{`unhandled`},
+		`prefix.foo.c`:   []string{`1`},
+		`prefix.bar.d`:   []string{``},
+		`prefix.bar.efg`: []string{``},
+		`prefix.bar.hij`: []string{`1`},
+		`prefix.bar.k`:   []string{`1`},
+		`prefix.bar.lmn`: []string{`1`},
+		`no_prefix`:      []string{`this has no prefix`},
 	}
 
 	testReadINIMatching(t, s, keys)
 }
 
-func testReadINIMatching(t *testing.T, b string, expected map[string]string) {
+func testReadINIMatching(t *testing.T, b string, expected map[string][]string) {
 	actual, err := ReadINI([]byte(b), nil)
 
 	if err != nil {
@@ -193,7 +209,7 @@ func testReadINIMatching(t *testing.T, b string, expected map[string]string) {
 			t.Errorf("Result map does not contain key %q", k)
 		}
 
-		if v != mv {
+		if !reflect.DeepEqual(v, mv) {
 			t.Errorf("Value of %q in result map %q != (expected) %q", k, mv, v)
 		}
 	}

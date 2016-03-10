@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -43,9 +44,9 @@ const defaultINICapacity int = 32
 var PrefixSeparator string = "."
 
 type iniParser struct {
-	rb     []byte            // slice of rbfix for reading
-	quoted [][]byte          // slice of quoted string parts
-	result map[string]string // Resulting string map
+	rb     []byte              // slice of rbfix for reading
+	quoted [][]byte            // slice of quoted string parts
+	result map[string][]string // Resulting string map
 	prefix string
 }
 
@@ -57,7 +58,7 @@ func (p *iniParser) put(k, v string) {
 	if len(p.prefix) > 0 {
 		k = p.prefix + k
 	}
-	p.result[k] = v
+	p.result[k] = append(p.result[k], v)
 }
 
 func advance(b []byte, from int, skip string) []byte {
@@ -79,6 +80,64 @@ trySkipAgain:
 	return b[from:]
 }
 
+func sanitizePrefix(prefix []byte) []byte {
+	var out bytes.Buffer
+	out.Grow(len(prefix))
+
+	var (
+		quoted        = false
+		escaped       = false
+		last     rune = -1
+		chomp         = 0
+		dropTail      = func() {
+			if chomp > 0 {
+				out.Truncate(out.Len() - chomp)
+			}
+			chomp = 0
+		}
+	)
+
+	for _, r := range string(prefix) {
+		if escaped {
+			out.Write(escape(r))
+			escaped = false
+			goto write
+		}
+
+		if !quoted && last == r && r == ' ' {
+			goto next
+		} else if !quoted && r == ' ' {
+			dropTail()
+			chomp, _ = out.WriteString(PrefixSeparator)
+			goto next
+		} else if r == '"' {
+			if quoted = !quoted; quoted {
+				dropTail()
+				chomp, _ = out.WriteString(PrefixSeparator)
+				goto next
+			} else {
+				dropTail()
+				chomp, _ = out.WriteString(PrefixSeparator)
+				goto next
+			}
+		}
+
+		if quoted && r == '\\' {
+			escaped = true
+			goto next
+		}
+
+	write:
+		chomp = 0
+		out.WriteRune(r)
+	next:
+		last = r
+	}
+
+	dropTail()
+	return out.Bytes()
+}
+
 func (p *iniParser) readPrefix() error {
 	p.rb = advance(p.rb, 0, anyWhitespace)
 
@@ -97,8 +156,11 @@ func (p *iniParser) readPrefix() error {
 	}
 
 	prefix := bytes.Trim(p.rb[:end], whitespaceSansLine)
+	prefix = sanitizePrefix(prefix)
+
 	p.rb = p.rb[end+1:]
 	prefixStr := string(prefix)
+
 	if strings.ContainsAny(prefixStr, "\n") {
 		return fmt.Errorf("Prefixes may not contain newlines (%q)", prefixStr)
 	}
@@ -239,6 +301,37 @@ var (
 	escDQuote    = []byte{byte('"')}  // Double quote
 )
 
+func escape(b rune) []byte {
+	var storage [4]byte
+	var seq []byte
+	switch b {
+	case '0':
+		seq = escNUL
+	case 'a':
+		seq = escBell
+	case 'b':
+		seq = escBackspace
+	case 'f':
+		seq = escFeed
+	case 'n':
+		seq = escNewline
+	case 'r':
+		seq = escCR
+	case 't':
+		seq = escHTab
+	case 'v':
+		seq = escVTab
+	case '\\':
+		seq = escSlash
+	case '"':
+		seq = escDQuote
+	default:
+		n := utf8.EncodeRune(storage[:], b)
+		seq = storage[:n]
+	}
+	return seq
+}
+
 func (p *iniParser) readQuote() (string, error) {
 
 	var (
@@ -246,44 +339,21 @@ func (p *iniParser) readQuote() (string, error) {
 		idx   int
 		ch    byte
 	)
-	for ch != byte('"') {
+	for ch != chQuote {
 		idx = bytes.IndexAny(p.rb, `\"`)
 		if idx == -1 {
 			return ``, io.ErrUnexpectedEOF
 		}
 		ch = p.rb[idx]
 
-		if ch == byte('\\') && len(p.rb) > idx+1 {
-			var escape []byte
-			switch p.rb[idx+1] {
-			case byte('0'):
-				escape = escNUL
-			case byte('a'):
-				escape = escBell
-			case byte('b'):
-				escape = escBackspace
-			case byte('f'):
-				escape = escFeed
-			case byte('n'):
-				escape = escNewline
-			case byte('r'):
-				escape = escCR
-			case byte('t'):
-				escape = escHTab
-			case byte('v'):
-				escape = escVTab
-			case byte('\\'):
-				escape = escSlash
-			case byte('"'):
-				escape = escDQuote
-			default:
-				escape = p.rb[idx+1 : idx+2]
-			}
-			parts = append(parts, p.rb[:idx], escape)
+		if ch == chEscape && len(p.rb) > idx+1 {
+			r, _ := utf8.DecodeRune(p.rb[idx+1:])
+			seq := escape(r)
+			parts = append(parts, p.rb[:idx], seq)
 			idx += 1
-		} else if ch == byte('\\') {
+		} else if ch == chEscape {
 			return ``, io.ErrUnexpectedEOF
-		} else if ch == byte('"') && idx != 0 {
+		} else if ch == chQuote && idx != 0 {
 			parts = append(parts, p.rb[:idx])
 		}
 		p.rb = p.rb[idx+1:]
@@ -313,14 +383,14 @@ func (p *iniParser) readQuote() (string, error) {
 // Values enclosed in double quotes can contain newlines and escape characters
 // supported by Go (\a, \b, \f, \n, \r, \t, \v, as well as escaped quotes and
 // backslashes and \0 for the NUL character).
-func ReadINI(b []byte, out map[string]string) (map[string]string, error) {
+func ReadINI(b []byte, out map[string][]string) (map[string][]string, error) {
 	var l int = len(b)
 	if l == 0 {
 		return out, nil
 	}
 
 	if out == nil {
-		out = make(map[string]string, defaultINICapacity)
+		out = make(map[string][]string, defaultINICapacity)
 	}
 
 	var p iniParser = iniParser{
