@@ -129,6 +129,8 @@ func TestReadQuoted(t *testing.T) {
 	expected := map[string][]string{
 		`normal`:  []string{`  a thing  `},
 		`escaped`: []string{string([]byte{0}) + "\a\b\f\n\r\t\v\\\"jkl;"},
+		`raw`:     []string{"a\n`b`\nc\n"},
+		`quote`:   []string{"`", `"`},
 	}
 
 	// In the interest of being possibly unusually thorough.
@@ -136,13 +138,19 @@ func TestReadQuoted(t *testing.T) {
 		; Test a fairly normal string
 		normal	= "  a thing  "
 		escaped	= "\0\a\b\f\n\r\t\v\\\"\j\k\l\;"
-		`, expected)
+		raw	= `+"`a\n``b``\nc\n`"+`
+		quote   = `+"````"+`
+		quote   = `+"`\"`",
+		expected)
 	testReadINIMatching(t, `
 		; Test one with inline characters that could be escaped.
 		normal	= "  a thing  "
 		escaped	= "\0\a\b\f
 \r	\v\\\"\j\k\l\;" ; Tests escaping non-escape characters as themselves
-		`, expected)
+		raw	= `+"`a\n``b``\nc\n`"+`
+		quote   = `+"````"+`
+		quote   = `+"`\"`",
+		expected)
 
 	testReadINIError(t, `unterminated = "`)
 	testReadINIError(t, `unexpected = """`)
@@ -192,6 +200,8 @@ no_prefix = this has no prefix
 
 func testReadINIMatching(t *testing.T, b string, expected map[string][]string) {
 	actual, err := ReadINI([]byte(b), nil)
+
+	t.Logf("Parsing:\n%s", b)
 
 	if err != nil {
 		t.Error("Error reading INI:", err)

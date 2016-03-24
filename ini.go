@@ -15,6 +15,7 @@ const (
 	chPrefixEnd   = byte(']')
 	chSpace       = byte(' ')
 	chQuote       = byte('"')
+	chRawQuote    = byte('`')
 	chTab         = byte('\t')
 	chLine        = byte('\n')
 	chFeed        = byte('\r') // ignored outside of strings.
@@ -265,6 +266,9 @@ func (p *iniParser) readValue() (string, error) {
 	case chQuote:
 		p.rb = p.rb[idx+1:]
 		return p.readQuote()
+	case chRawQuote:
+		p.rb = p.rb[idx+1:]
+		return p.readRawQuote()
 	case chComment:
 		fallthrough
 	case chLine:
@@ -332,10 +336,45 @@ func escape(b rune) []byte {
 	return seq
 }
 
+func (p *iniParser) readRawQuote() (string, error) {
+	var (
+		parts = p.quoted[:0]
+		idx   int
+		ch    byte
+	)
+
+	for ch != chRawQuote {
+		idx = bytes.IndexByte(p.rb, chRawQuote)
+		if idx == -1 {
+			return ``, io.ErrUnexpectedEOF
+		}
+		ch = p.rb[idx]
+
+		if ch == chRawQuote && len(p.rb) > idx+1 && p.rb[idx+1] == chRawQuote {
+			parts = append(parts, p.rb[:idx+1])
+			idx += 1
+			ch = 0 // Reset ch since it was escaped.
+		} else if ch == chRawQuote && idx != 0 {
+			parts = append(parts, p.rb[:idx])
+		}
+		p.rb = p.rb[idx+1:]
+	}
+	p.quoted = parts[:0]
+
+	switch len(parts) {
+	case 0:
+		return ``, nil
+	case 1:
+		return string(parts[0]), nil
+	default:
+		return string(bytes.Join(parts, nil)), nil
+	}
+}
+
 func (p *iniParser) readQuote() (string, error) {
 
 	var (
-		parts = p.quoted
+		parts = p.quoted[:0]
 		idx   int
 		ch    byte
 	)
