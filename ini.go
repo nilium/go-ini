@@ -88,6 +88,12 @@ func (v Values) Matching(dst Values, fn func(string, []string) bool) Values {
 	return dst
 }
 
+func (v Values) WithPrefix(dst Values, prefix string) Values {
+	return v.Matching(dst, func(k string, _ []string) bool {
+		return strings.HasPrefix(k, prefix)
+	})
+}
+
 // nextfunc is a parsing function that modifies the decoder's state and returns another parsing
 // function. If nextfunc returns io.EOF, parsing is complete. Any other error halts parsing.
 type nextfunc func() (nextfunc, error)
