@@ -54,6 +54,10 @@ func TestReadINI_section_badspace(t *testing.T) {
 }
 
 func TestReadINIEmpty(t *testing.T) {
+	testReadINIMatching(t, nil, "", Values{})
+}
+
+func TestReadININoValues(t *testing.T) {
 	testReadINIMatching(t, nil, "\n\t\n;empty\n\t\n\t", Values{})
 }
 

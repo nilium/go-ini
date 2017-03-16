@@ -536,6 +536,9 @@ func (d *decoder) readSubsection() (next nextfunc, err error) {
 
 func (d *decoder) start() (next nextfunc, err error) {
 	_, _, err = d.nextRune()
+	if err == io.EOF {
+		return nil, nil
+	}
 	return d.readElem, err
 }
 
