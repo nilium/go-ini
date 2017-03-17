@@ -34,7 +34,7 @@ func TestPanicToErr_nonerr(t *testing.T) {
 	}()
 
 	if want := "ini: panic: foobar!"; err == nil || err.Error() != want {
-		t.Errorf("err(%v) = %v; want %q", err, want)
+		t.Errorf("err(%T) = %v; want %q", err, err, want)
 	}
 }
 

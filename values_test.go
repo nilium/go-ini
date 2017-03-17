@@ -72,7 +72,7 @@ func TestValues_matching(t *testing.T) {
 		if !reflect.DeepEqual(expected, got) {
 			t.Errorf("v.Matching(...) = %#v; want %#v", got, expected)
 		} else {
-			t.Log("v.Matching(...) = %#v", got)
+			t.Logf("v.Matching(...) = %#v", got)
 		}
 	}
 
