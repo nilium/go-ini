@@ -42,14 +42,18 @@ const (
 // Values is any set of INI values. This may be used as a Recorder for a Reader.
 type Values map[string][]string
 
+// Set replaces key with a slice containing only value.
 func (v Values) Set(key, value string) {
 	v[key] = []string{value}
 }
 
+// Add adds a value to key's value slice (allocating one if none is present).
 func (v Values) Add(key, value string) {
 	v[key] = append(v[key], value)
 }
 
+// Get returns the first value for key. If key does not exist or has an empty value slice, Get
+// returns an empty string.
 func (v Values) Get(key string) string {
 	if d := v[key]; len(d) > 0 {
 		return d[0]
@@ -57,15 +61,20 @@ func (v Values) Get(key string) string {
 	return ""
 }
 
+// Del removes the key from the receiver.
 func (v Values) Del(key string) {
 	delete(v, key)
 }
 
+// Contains returns true if the key is defined in the Values map. This is an existence check, not
+// a content check, so the key may be for a nil or empty slice.
 func (v Values) Contains(key string) bool {
 	_, ok := v[key]
 	return ok
 }
 
+// Copy copies the values from the receiver to dst. If a key from the receiver exists in dst, the
+// values from the receiver are appended to the values of dst[key].
 func (v Values) Copy(dst Values) Values {
 	if dst == nil {
 		dst = make(Values, len(v))
@@ -76,7 +85,10 @@ func (v Values) Copy(dst Values) Values {
 	return dst
 }
 
-func (v Values) Matching(dst Values, fn func(string, []string) bool) Values {
+// Matching iterates through the receiver's values, calling fn for each key and its values. If fn
+// returns true, that key's values are returned in the resulting Values. fn must not modify the
+// values slice it receives.
+func (v Values) Matching(dst Values, fn func(key string, values []string) bool) Values {
 	if dst == nil {
 		dst = make(Values)
 	}
@@ -88,6 +100,7 @@ func (v Values) Matching(dst Values, fn func(string, []string) bool) Values {
 	return dst
 }
 
+// WithPrefix returns a copy of Values containing only the keys with the given prefix string.
 func (v Values) WithPrefix(dst Values, prefix string) Values {
 	return v.Matching(dst, func(k string, _ []string) bool {
 		return strings.HasPrefix(k, prefix)
@@ -98,6 +111,9 @@ func (v Values) WithPrefix(dst Values, prefix string) Values {
 // function. If nextfunc returns io.EOF, parsing is complete. Any other error halts parsing.
 type nextfunc func() (nextfunc, error)
 
+// decoder is a wrapper around an io.Reader for the purpose of doing by-rune parsing of INI file
+// input. It also holds enough state to track line, column, key prefixes (from sections), and
+// errors.
 type decoder struct {
 	true string
 
@@ -116,8 +132,8 @@ type decoder struct {
 	// Storage
 	buffer  bytes.Buffer
 	key     string
-	prefix  []byte // prefix is prepended to all buffered keys
-	prefix2 [32]byte
+	prefix  []byte   // prefix is prepended to all buffered keys
+	prefix2 [32]byte // prefix2 is a buffer to hold most key prefixes
 
 	// peek / next state
 	havenext bool
@@ -125,13 +141,19 @@ type decoder struct {
 	nexterr  error
 }
 
+// True is the default value provided to value-less keys in INI files. This is done to treat
+// value-less keys as boolean-on flags in INI files.
 const True string = "1"
 
+// ReadINI reads an INI file from b, writing the results to the out Values. If out is nil, a new
+// Values is allocated to store the results.
+//
+// ReadINI is a convenience function for calling DefaultDecoder.Read(bytes.NewReader(b), out).
 func ReadINI(b []byte, out Values) (Values, error) {
 	if out == nil {
 		out = make(Values)
 	}
-	err := DefaultDecoder.Read(bytes.NewBuffer(b), out)
+	err := DefaultDecoder.Read(bytes.NewReader(b), out)
 	if err != nil {
 		return nil, err
 	}
@@ -568,6 +590,13 @@ func (d *decoder) readElem() (next nextfunc, err error) {
 
 var defaultSeparator = []byte{'.'}
 
+// None is a value to force a Reader.True to indicate that empty keys should have no value or for
+// Reader.Separator to indicate there should be no separator string between section keys and value
+// keys.
+//
+// None is a specific sequence of garbage control characters, just due to it being unlikely that you
+// would want it as a true or separator value. This is not guaranteed to be the same value between
+// versions of the package.
 const None = "\x00\x00\x13\x15\xff\x00\x12\x00\x13"
 
 func (d *decoder) reset(cfg *Reader, dst Recorder, rd io.Reader) {
@@ -638,6 +667,9 @@ func (d *decoder) read() (err error) {
 	return err
 }
 
+// KeyCase is an option value to change how unquoted keys are handled. For example, to lowercase all
+// unquoted portions of a key, you would use LowerCase (the default of new Readers and zero value).
+// This allows for basic case normalization across files.
 type KeyCase int
 
 const (
@@ -650,6 +682,8 @@ const (
 	CaseSensitive
 )
 
+// DefaultDecoder is the default Reader. Its separator is a "." (period), its True value is the
+// string "1", and keys are case-sensitive.
 var DefaultDecoder = Reader{
 	Separator: ".",
 	Casing:    CaseSensitive,
@@ -663,12 +697,26 @@ type Recorder interface {
 	Add(key, value string)
 }
 
+// Reader is an INI reader configuration. It does not hold state and may be copied as needed.
+// It is not safe to modify a Reader while Reading, however, as the internal decoder keeps a pointer
+// to the Reader.
 type Reader struct {
+	// Separator is the string that is inserted between key segments (i.e., given a Separator of
+	// ":", the string "[a b c]\nd = 5" evaluates out to a:b:c:d = 5). If Separator is None, not
+	// the empty string, there is no separator. If Separator is the empty string, it defaults to
+	// "." (period).
 	Separator string
-	Casing    KeyCase
-	True      string
+	// Casing controls how unquoted key segments are cased. If LowerCase (the default / zero
+	// value), unquoted key segments are converted to lowercase. If UpperCase, they're made
+	// uppercase. If CaseSensitive, key case is the same as the input.
+	Casing KeyCase
+	// True is the value string used for keys with no value. For example, if True is "T"
+	// (assuming default Separator), given the input "[a b c]\nd", it evaluates to a.b.c.d = T.
+	True string
 }
 
+// Read decodes INI file input from r and conveys it to dst. If an error occurs, it is returned. If
+// the error is an EOF before parsing is finished, io.ErrUnexpectedEOF is returned.
 func (d *Reader) Read(r io.Reader, dst Recorder) error {
 	var dec decoder
 	dec.reset(d, dst, r)

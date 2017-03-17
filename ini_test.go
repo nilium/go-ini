@@ -11,12 +11,14 @@ import (
 
 var succReaders = map[string]func(string) io.Reader{
 	"bytes.Buffer":         func(s string) io.Reader { return bytes.NewBufferString(s) },
+	"bytes.Reader":         func(s string) io.Reader { return bytes.NewReader([]byte(s)) },
 	"strings.Reader":       func(s string) io.Reader { return strings.NewReader(s) },
 	"iotest.OneByteReader": func(s string) io.Reader { return iotest.OneByteReader(strings.NewReader(s)) },
 }
 
 var failReaders = map[string]func(string) io.Reader{
 	"bytes.Buffer":         func(s string) io.Reader { return bytes.NewBufferString(s) },
+	"bytes.Reader":         func(s string) io.Reader { return bytes.NewReader([]byte(s)) },
 	"strings.Reader":       func(s string) io.Reader { return strings.NewReader(s) },
 	"iotest.OneByteReader": func(s string) io.Reader { return iotest.OneByteReader(strings.NewReader(s)) },
 	"iotest.DataErrReader": func(s string) io.Reader { return iotest.DataErrReader(strings.NewReader(s)) },
