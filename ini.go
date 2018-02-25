@@ -1,5 +1,5 @@
 // Package ini is an INI parsing library.
-package ini
+package ini // import "go.spiff.io/go-ini"
 
 import (
 	"bytes"
