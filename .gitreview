@@ -1,5 +1,5 @@
 [gerrit]
 host=git.spiff.io
-port=29418
+port=7194
 project=go-ini
 defaultbranch=master
