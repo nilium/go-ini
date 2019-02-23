@@ -1,1 +1,1 @@
-module "go.spiff.io/go-ini"
+module go.spiff.io/go-ini
